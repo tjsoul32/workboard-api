@@ -3,6 +3,7 @@ from __future__ import unicode_literals
 
 from django.shortcuts import render
 from django.http import HttpResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 
 from api.models import User as U
@@ -12,7 +13,7 @@ from api.models import Commit as C
 
 import json, uuid
 from datetime import datetime, timedelta
-from django.utils import timezone
+
 
 def genToken():
     token = ''
@@ -71,6 +72,66 @@ def user_logout(request):
     return genResponse(res)
 
 
+# 用户列表
+@csrf_exempt
+def user_list(request):
+    get_users = U.objects.values("username").filter(state = 1)
+    users = [
+        {
+            "username": u["username"]
+        }
+        for u in get_users if u
+    ]
+    res = users
+
+    return genResponse(res)
+
+
+# 添加任务
+@csrf_exempt
+def task_add(request):
+    postData = request.POST
+    username = postData["username"]
+    description = postData["description"]
+    member = postData["member"].split(',')
+    operator = postData["operator"].split(',')
+    level = postData["level"]
+    member.append(username)
+    operator.append(username) 
+
+    get_users = U.objects.values("userid", "username").filter(username__in = member)
+    users = { u["username"]: u["userid"] for u in get_users }
+
+    creator = users[username] 
+    member = ',' + ','.join([ str(users[m]) for m in member if m]) + ','
+    operator = ',' + ','.join([ str(users[o]) for o in operator if o]) + ','
+    create_time = update_time = edit_time = genDatetime()
+
+    t = T.objects.create(creator = creator, operator = operator, member = member, description = description, create_time = create_time, update_time = update_time, state = 1)
+    taskid = t.taskid
+
+    c = C.objects.create(taskid = taskid, author_id = creator, content = description, create_time = create_time, edit_time = edit_time, state = 1)
+    TL.objects.create(taskid = taskid, userid = creator, level = level)
+
+    res = {"result": "ok"}
+    return genResponse(res)
+
+
+# 修改任务等级
+@csrf_exempt
+def task_setlevel(request):
+    postData = request.POST
+    username = postData["username"]
+    taskid = postData["taskid"]
+    level = postData["level"]
+
+    user = U.objects.values("userid").get(username = username)
+    TL.objects.filter(taskid = taskid, userid = user["userid"]).update(level = level)
+
+    res = {"result": "ok"}
+    return genResponse(res)
+
+
 # 任务列表
 @csrf_exempt
 def task_list(request):
@@ -78,7 +139,7 @@ def task_list(request):
     username = getData["username"]
     user = U.objects.get(username = username)
 
-    get_tasks = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").filter(state = 1, member__contains = ',' + str(user.userid) +',')
+    get_tasks = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").filter(state = 1, member__contains = ',' + str(user.userid) + ',').order_by("-update_time")
     get_level = TL.objects.values("taskid", "level").filter(userid = user.userid)
     levels = { l["taskid"]: l["level"] for l in get_level }
 
@@ -101,13 +162,39 @@ def task_list(request):
     return genResponse(res)
 
 
+# task info
+@csrf_exempt
+def task_info(request):
+    getData = request.GET
+    taskid = getData["taskid"] if getData["taskid"] else 0
+    username = getData["username"]
+    user = U.objects.values("userid").get(username = username)
+
+    get_task = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").filter(taskid = taskid, state = 1)
+
+    res = {}
+    res["task"] = get_task[0] if get_task else {}
+
+    if res["task"]:
+        res["task"]["create_time"] = res["task"]["create_time"].strftime('%Y-%m-%d %H:%M:%S')
+        res["task"]["update_time"] = res["task"]["update_time"].strftime('%Y-%m-%d %H:%M:%S')
+
+    return genResponse(res)
+
+
 # task detail
 @csrf_exempt
 def task_detail(request):
     getData = request.GET
     taskid = getData["taskid"] if getData["taskid"] else 0
+    username = getData["username"]
+    user = U.objects.values("userid").get(username = username)
 
     get_task = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").filter(taskid = taskid, state = 1)
+
+    get_level = TL.objects.values("level").filter(userid = user["userid"], taskid = taskid)
+    level = get_level[0]["level"] if len(get_level) > 0 else 1
+
     get_commits = C.objects.values("commitid", "taskid", "author_id", "content", "create_time", "edit_time").filter(taskid = taskid, state = 1).order_by("create_time")
     users_id = [ c["author_id"] for c in get_commits]
 
@@ -128,6 +215,7 @@ def task_detail(request):
 
     res = {}
     res["task"] = get_task[0] if get_task else {}
+    res["task"]["level"] = level
     res["commits"] = commits 
 
     if res["task"]:
@@ -158,6 +246,7 @@ def content_new(request):
             "create_time": create_time.strftime('%Y-%m-%d %H:%M:%S'),
             "edit_time": edit_time.strftime('%Y-%m-%d %H:%M:%S'),
         }
+        T.objects.filter(taskid = taskid).update(update_time = create_time)
     except Exception as e:
         print e
         res = {"result": "failed"}
@@ -169,14 +258,17 @@ def content_new(request):
 @csrf_exempt
 def content_edit(request):
     postData = request.POST  
+    taskid = postData["taskid"]
     commitid = postData["commitid"]
     content = postData["content"]
     edit_time = genDatetime()
 
     try:
         C.objects.filter(commitid = commitid).update(content = content, edit_time = edit_time)
+        T.objects.filter(taskid = taskid).update(update_time = edit_time)
         res = {"result": "ok"}
-    except:
+    except Exception as e:
+        print e
         res = {"result": "failed"}
 
     return genResponse(res)
