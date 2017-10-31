@@ -26,7 +26,12 @@ urlpatterns = [
     url(r'^userlogin/$', api_views.user_login, name = 'userlogin'),
     url(r'^userlogout/$', api_views.user_logout, name = 'userlogout'),
 
+    url(r'^userlist/$', api_views.user_list, name = 'userlist'),
+
+    url(r'^taskadd/$', api_views.task_add, name = 'taskadd'),
+    url(r'^tasksetlevel/$', api_views.task_setlevel, name = 'tasksetlevel'),
     url(r'^tasklist/$', api_views.task_list, name = 'tasklist'),
+    url(r'^taskinfo/$', api_views.task_info, name = 'taskinfo'),
     url(r'^taskdetail/$', api_views.task_detail, name = 'taskdetail'),
 
     url(r'^contentnew/$', api_views.content_new, name = 'contentnew'),

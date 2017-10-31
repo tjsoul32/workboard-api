@@ -171,11 +171,25 @@ def task_info(request):
     user = U.objects.values("userid").get(username = username)
 
     get_task = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").filter(taskid = taskid, state = 1)
+    get_level = TL.objects.values("level").filter(userid = user["userid"], taskid = taskid)
+    level = get_level[0]["level"] if len(get_level) > 0 else 1
+
+    #users_id = [ c["author_id"] for c in get_commits ]
+
+    get_users_id = get_task[0]["member"].split(',') if get_task else []
+    users_id = [ int(u) for u in get_users_id if u ]
+
+    get_users = U.objects.values("userid", "username").filter(userid__in = users_id)
+    users = { u["userid"]: u["username"] for u in get_users }
 
     res = {}
     res["task"] = get_task[0] if get_task else {}
-
+    res["task"]["level"] = level
+ 
     if res["task"]:
+        res["task"]["creator"] = users[int(res["task"]["creator"])]
+        res["task"]["operator"] = [ users[int(o)] for o in res["task"]["operator"].split(',') if o ]
+        res["task"]["member"] = [ users[int(m)] for m in res["task"]["member"].split(',') if m ]
         res["task"]["create_time"] = res["task"]["create_time"].strftime('%Y-%m-%d %H:%M:%S')
         res["task"]["update_time"] = res["task"]["update_time"].strftime('%Y-%m-%d %H:%M:%S')
 
@@ -196,7 +210,10 @@ def task_detail(request):
     level = get_level[0]["level"] if len(get_level) > 0 else 1
 
     get_commits = C.objects.values("commitid", "taskid", "author_id", "content", "create_time", "edit_time").filter(taskid = taskid, state = 1).order_by("create_time")
-    users_id = [ c["author_id"] for c in get_commits]
+    #users_id = [ c["author_id"] for c in get_commits ]
+
+    get_users_id = get_task[0]["member"].split(',') if get_task else []
+    users_id = [ int(u) for u in get_users_id if u ]
 
     get_users = U.objects.values("userid", "username").filter(userid__in = users_id)
     users = { u["userid"]: u["username"] for u in get_users }
@@ -219,6 +236,9 @@ def task_detail(request):
     res["commits"] = commits 
 
     if res["task"]:
+        res["task"]["creator"] = users[int(res["task"]["creator"])]
+        res["task"]["operator"] = [ users[int(o)] for o in res["task"]["operator"].split(',') if o ]
+        res["task"]["member"] = [ users[int(m)] for m in res["task"]["member"].split(',') if m ]
         res["task"]["create_time"] = res["task"]["create_time"].strftime('%Y-%m-%d %H:%M:%S')
         res["task"]["update_time"] = res["task"]["update_time"].strftime('%Y-%m-%d %H:%M:%S')
 
