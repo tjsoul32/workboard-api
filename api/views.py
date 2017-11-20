@@ -103,15 +103,17 @@ def task_add(request):
     users = { u["username"]: u["userid"] for u in get_users }
 
     creator = users[username] 
-    member = ',' + ','.join([ str(users[m]) for m in member if m]) + ','
+    member_str = ',' + ','.join([ str(users[m]) for m in member if m]) + ','
     operator = ',' + ','.join([ str(users[o]) for o in operator if o]) + ','
     create_time = update_time = edit_time = genDatetime()
 
-    t = T.objects.create(creator = creator, operator = operator, member = member, description = description, create_time = create_time, update_time = update_time, state = 1)
+    t = T.objects.create(creator = creator, operator = operator, member = member_str, description = description, create_time = create_time, update_time = update_time, state = 1)
     taskid = t.taskid
 
     c = C.objects.create(taskid = taskid, author_id = creator, content = description, create_time = create_time, edit_time = edit_time, state = 1)
-    TL.objects.create(taskid = taskid, userid = creator, level = level)
+
+    for m in member:
+        TL.objects.create(taskid = taskid, userid = str(users[m]), level = level)
 
     res = {"result": "ok"}
     return genResponse(res)
@@ -130,6 +132,30 @@ def task_setlevel(request):
 
     res = {"result": "ok"}
     return genResponse(res)
+
+
+# 更新成员
+@csrf_exempt
+def task_setmember(request):
+    postData = request.POST
+    username = postData["username"]
+    taskid = postData["taskid"]
+    member = postData["member"].split(',')
+    operator = postData["operator"].split(',')
+    
+    get_ops = T.objects.values("operator").get(taskid = taskid)
+    get_users = U.objects.values("userid", "username").filter(username__in = member)
+    users = { u["username"]: u["userid"] for u in get_users }
+
+    if users[username] in [ int(o) for o in get_ops["operator"].split(',') if o ]:
+        member_str = ',' + ','.join([ str(users[m]) for m in member if m]) + ','
+        operator_str = ',' + ','.join([ str(users[o]) for o in operator if o]) + ','
+        update_time = update_time = edit_time = genDatetime()
+        T.objects.filter(taskid = taskid).update(operator = operator_str, member = member_str, update_time = update_time)
+
+    res = {"result": "ok"}
+    return genResponse(res)
+
 
 
 # 任务列表
@@ -214,6 +240,7 @@ def task_detail(request):
 
     get_users_id = get_task[0]["member"].split(',') if get_task else []
     users_id = [ int(u) for u in get_users_id if u ]
+    users_id.append(get_task[0]["creator"])
 
     get_users = U.objects.values("userid", "username").filter(userid__in = users_id)
     users = { u["userid"]: u["username"] for u in get_users }
@@ -227,7 +254,7 @@ def task_detail(request):
             "create_time": c["create_time"].strftime('%Y-%m-%d %H:%M:%S'),
             "edit_time": c["edit_time"].strftime('%Y-%m-%d %H:%M:%S'),
         }
-        for c in get_commits if c 
+        for c in get_commits if c
     ]
 
     res = {}
@@ -299,11 +326,14 @@ def content_edit(request):
 def content_del(request):
     postData = request.POST
     commitid = postData["commitid"]
+    taskid = postData["taskid"]
     username = postData["username"]
-    author_id = U.objects.values("userid").get(username = username)["userid"]    
+    user_id = U.objects.values("userid").get(username = username)["userid"]    
+    task = T.objects.values("creator", "operator").get(taskid = taskid)
 
     try:
-        C.objects.filter(commitid = commitid, author_id = author_id).update(state = 0)
+        if task["creator"] == user_id or user_id in [ int(o) for o in task["operator"].split(',') if o ]:
+            C.objects.filter(commitid = commitid).update(state = 0)
         res = {"result": "ok"}
     except Exception as e:
         print e

@@ -30,6 +30,7 @@ urlpatterns = [
 
     url(r'^taskadd/$', api_views.task_add, name = 'taskadd'),
     url(r'^tasksetlevel/$', api_views.task_setlevel, name = 'tasksetlevel'),
+    url(r'^tasksetmember/$', api_views.task_setmember, name = 'tasksetmember'),
     url(r'^tasklist/$', api_views.task_list, name = 'tasklist'),
     url(r'^taskinfo/$', api_views.task_info, name = 'taskinfo'),
     url(r'^taskdetail/$', api_views.task_detail, name = 'taskdetail'),
