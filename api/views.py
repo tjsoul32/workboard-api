@@ -28,13 +28,31 @@ def genResponse(res):
     response["Access-Control-Allow-Origin"] = "*"
     response["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
     response["Access-Control-Max-Age"] = "1000"
-    response["Access-Control-Allow-Headers"] = "*"
+    response["Access-Control-Allow-Headers"] = "*, X-Token, X-Un"
 
     return response
 
 
 def genDatetime():
     return timezone.now() + timedelta(hours = 8)
+
+
+def id_verification(func):
+    def wrapper(request):
+        metaData = request.META
+        token = metaData["HTTP_X_TOKEN"] if "HTTP_X_TOKEN" in metaData else ''
+        un = metaData["HTTP_X_UN"] if "HTTP_X_UN" in metaData else ''
+
+        try:
+            res = U.objects.get(username = un, token = token, state = 1)
+        except:
+            res = ''
+
+        if res:
+            return func(request)            
+        else:
+            return genResponse({'code': -1})
+    return wrapper
 
 
 # 用户登录验证
@@ -74,6 +92,7 @@ def user_logout(request):
 
 # 用户列表
 @csrf_exempt
+@id_verification
 def user_list(request):
     get_users = U.objects.values("username").filter(state = 1)
     users = [
@@ -89,6 +108,7 @@ def user_list(request):
 
 # 添加任务
 @csrf_exempt
+@id_verification
 def task_add(request):
     postData = request.POST
     username = postData["username"]
@@ -96,8 +116,8 @@ def task_add(request):
     member = postData["member"].split(',')
     operator = postData["operator"].split(',')
     level = postData["level"]
-    member.append(username)
-    operator.append(username) 
+    if not username in member: member.append(username)
+    if not username in operator: operator.append(username) 
 
     get_users = U.objects.values("userid", "username").filter(username__in = member)
     users = { u["username"]: u["userid"] for u in get_users }
@@ -121,6 +141,7 @@ def task_add(request):
 
 # 修改任务等级
 @csrf_exempt
+@id_verification
 def task_setlevel(request):
     postData = request.POST
     username = postData["username"]
@@ -136,12 +157,14 @@ def task_setlevel(request):
 
 # 更新成员
 @csrf_exempt
+@id_verification
 def task_setmember(request):
     postData = request.POST
     username = postData["username"]
     taskid = postData["taskid"]
     member = postData["member"].split(',')
     operator = postData["operator"].split(',')
+    level = postData["level"]
     
     get_ops = T.objects.values("operator").get(taskid = taskid)
     get_users = U.objects.values("userid", "username").filter(username__in = member)
@@ -152,6 +175,8 @@ def task_setmember(request):
         operator_str = ',' + ','.join([ str(users[o]) for o in operator if o]) + ','
         update_time = update_time = edit_time = genDatetime()
         T.objects.filter(taskid = taskid).update(operator = operator_str, member = member_str, update_time = update_time)
+        for m in member:
+            TL.objects.filter(taskid = taskid, userid = users[m]).update(level = level)
 
     res = {"result": "ok"}
     return genResponse(res)
@@ -160,6 +185,7 @@ def task_setmember(request):
 
 # 任务列表
 @csrf_exempt
+@id_verification
 def task_list(request):
     getData = request.GET
     username = getData["username"]
@@ -190,6 +216,7 @@ def task_list(request):
 
 # task info
 @csrf_exempt
+@id_verification
 def task_info(request):
     getData = request.GET
     taskid = getData["taskid"] if getData["taskid"] else 0
@@ -203,6 +230,7 @@ def task_info(request):
     #users_id = [ c["author_id"] for c in get_commits ]
 
     get_users_id = get_task[0]["member"].split(',') if get_task else []
+    get_users_id.append(get_task[0]["creator"])
     users_id = [ int(u) for u in get_users_id if u ]
 
     get_users = U.objects.values("userid", "username").filter(userid__in = users_id)
@@ -224,26 +252,28 @@ def task_info(request):
 
 # task detail
 @csrf_exempt
+@id_verification
 def task_detail(request):
     getData = request.GET
     taskid = getData["taskid"] if getData["taskid"] else 0
     username = getData["username"]
     user = U.objects.values("userid").get(username = username)
 
-    get_task = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").filter(taskid = taskid, state = 1)
-
+    get_task = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").get(taskid = taskid, state = 1)
     get_level = TL.objects.values("level").filter(userid = user["userid"], taskid = taskid)
     level = get_level[0]["level"] if len(get_level) > 0 else 1
 
-    get_commits = C.objects.values("commitid", "taskid", "author_id", "content", "create_time", "edit_time").filter(taskid = taskid, state = 1).order_by("create_time")
-    #users_id = [ c["author_id"] for c in get_commits ]
-
-    get_users_id = get_task[0]["member"].split(',') if get_task else []
+    get_users_id = get_task["member"].split(',') if get_task else []
     users_id = [ int(u) for u in get_users_id if u ]
-    users_id.append(get_task[0]["creator"])
 
     get_users = U.objects.values("userid", "username").filter(userid__in = users_id)
     users = { u["userid"]: u["username"] for u in get_users }
+
+    if not user["userid"] in users:
+        return genResponse({"task": [], "commits": []})
+
+    users_id.append(get_task["creator"])
+    get_commits = C.objects.values("commitid", "taskid", "author_id", "content", "create_time", "edit_time").filter(taskid = taskid, state = 1, author_id__in = users).order_by("create_time")
 
     commits = [         
         {
@@ -258,7 +288,7 @@ def task_detail(request):
     ]
 
     res = {}
-    res["task"] = get_task[0] if get_task else {}
+    res["task"] = get_task if get_task else {}
     res["task"]["level"] = level
     res["commits"] = commits 
 
@@ -274,6 +304,7 @@ def task_detail(request):
 
 # new content
 @csrf_exempt
+@id_verification
 def content_new(request):
     postData = request.POST
     username = postData["username"]
@@ -303,6 +334,7 @@ def content_new(request):
 
 # edit content
 @csrf_exempt
+@id_verification
 def content_edit(request):
     postData = request.POST  
     taskid = postData["taskid"]
@@ -323,6 +355,7 @@ def content_edit(request):
 
 # delete content
 @csrf_exempt
+@id_verification
 def content_del(request):
     postData = request.POST
     commitid = postData["commitid"]
