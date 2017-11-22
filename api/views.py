@@ -6,6 +6,8 @@ from django.http import HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 
+from django.db.models import Q, Count
+
 from api.models import User as U
 from api.models import Task as T
 from api.models import Tasklevel as TL
@@ -37,6 +39,7 @@ def genDatetime():
     return timezone.now() + timedelta(hours = 8)
 
 
+# http request 身份验证
 def id_verification(func):
     def wrapper(request):
         metaData = request.META
@@ -85,7 +88,7 @@ def user_logout(request):
     U.objects.filter(token = token).update(token = '')
 
     res = {}
-    res["token"] = token
+    res["token"] = ''
 
     return genResponse(res)
 
@@ -94,18 +97,20 @@ def user_logout(request):
 @csrf_exempt
 @id_verification
 def user_list(request):
+    getData = request.GET
+    username = getData["username"]
     get_users = U.objects.values("username").filter(state = 1)
     users = [
         {
             "username": u["username"]
         }
-        for u in get_users if u
+        for u in get_users if u["username"] != username
     ]
     res = users
 
     return genResponse(res)
 
-
+###########################################################
 # 添加任务
 @csrf_exempt
 @id_verification
@@ -133,7 +138,8 @@ def task_add(request):
     c = C.objects.create(taskid = taskid, author_id = creator, content = description, create_time = create_time, edit_time = edit_time, state = 1)
 
     for m in member:
-        TL.objects.create(taskid = taskid, userid = str(users[m]), level = level)
+        if m: 
+            TL.objects.create(taskid = taskid, userid = str(users[m]), level = level)
 
     res = {"result": "ok"}
     return genResponse(res)
@@ -149,7 +155,9 @@ def task_setlevel(request):
     level = postData["level"]
 
     user = U.objects.values("userid").get(username = username)
-    TL.objects.filter(taskid = taskid, userid = user["userid"]).update(level = level)
+    upd = TL.objects.filter(taskid = taskid, userid = user["userid"]).update(level = level)
+    if not upd:
+        TL.objects.create(taskid = taskid, userid = user["userid"], level = level)
 
     res = {"result": "ok"}
     return genResponse(res)
@@ -374,5 +382,43 @@ def content_del(request):
 
     return genResponse(res)
 
+
+#####################################################################
+# 任务统计
+@csrf_exempt
+@id_verification
+def task_agg(request):
+    metaData = request.META
+    username = metaData["HTTP_X_UN"]
+    me = U.objects.values("username", "userid").get(username = username)
+    userid = str(me["userid"]).strip()
+    userid_str = ',' + userid + ','
+
+    mytasks = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "state").filter(Q(creator = userid) | Q(member__contains = userid_str))    
+
+    task_creator = []
+    task_operator = []
+    task_member = []
+    
+    for t in mytasks:
+        if userid == t["creator"]:
+            task_creator.append(t["taskid"])
+        if userid_str in t["operator"]:
+            task_operator.append(t["taskid"])
+        if userid_str in t["member"]:
+            task_member.append(t["taskid"])
+
+    mylevel = TL.objects.values("level").filter(taskid__in = task_member, userid = userid).annotate(num = Count("level"))
+    mylevel = { l["level"]: l["num"] for l in mylevel }
+
+    res = {}
+    res["roles"] = {
+        "creator": len(task_creator),
+        "operator": len(task_operator),
+        "member": len(task_member)
+    }
+    res["levels"] = {  i: (mylevel[i] if i in mylevel else 0)  for i in range(1, 5) }
+
+    return genResponse(res)
 
 
