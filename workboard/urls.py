@@ -35,6 +35,8 @@ urlpatterns = [
     url(r'^taskinfo/$', api_views.task_info, name = 'taskinfo'),
     url(r'^taskdetail/$', api_views.task_detail, name = 'taskdetail'),
 
+    url(r'^taskagg/$', api_views.task_agg, name = 'taskagg'),
+
     url(r'^contentnew/$', api_views.content_new, name = 'contentnew'),
     url(r'^contentedit/$', api_views.content_edit, name = 'contentedit'),
     url(r'^contentdel/$', api_views.content_del, name = 'contentdel'),

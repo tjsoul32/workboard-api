@@ -272,6 +272,7 @@ def task_detail(request):
     level = get_level[0]["level"] if len(get_level) > 0 else 1
 
     get_users_id = get_task["member"].split(',') if get_task else []
+    get_users_id.append(get_task["creator"])
     users_id = [ int(u) for u in get_users_id if u ]
 
     get_users = U.objects.values("userid", "username").filter(userid__in = users_id)
@@ -300,6 +301,7 @@ def task_detail(request):
     res["task"]["level"] = level
     res["commits"] = commits 
 
+    print users
     if res["task"]:
         res["task"]["creator"] = users[int(res["task"]["creator"])]
         res["task"]["operator"] = [ users[int(o)] for o in res["task"]["operator"].split(',') if o ]
