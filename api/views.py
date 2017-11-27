@@ -267,7 +267,11 @@ def task_detail(request):
     username = getData["username"]
     user = U.objects.values("userid").get(username = username)
 
-    get_task = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").get(taskid = taskid, state = 1)
+    try:
+        get_task = T.objects.values("taskid", "creator", "operator", "member", "create_time", "update_time", "description", "state").get(taskid = taskid, state = 1)
+    except Exception as e:
+        return genResponse({"task": [], "commits": []})
+
     get_level = TL.objects.values("level").filter(userid = user["userid"], taskid = taskid)
     level = get_level[0]["level"] if len(get_level) > 0 else 1
 
@@ -301,7 +305,6 @@ def task_detail(request):
     res["task"]["level"] = level
     res["commits"] = commits 
 
-    print users
     if res["task"]:
         res["task"]["creator"] = users[int(res["task"]["creator"])]
         res["task"]["operator"] = [ users[int(o)] for o in res["task"]["operator"].split(',') if o ]
