@@ -422,7 +422,7 @@ def task_agg(request):
         "operator": len(task_operator),
         "member": len(task_member)
     }
-    res["levels"] = {  i: (mylevel[i] if i in mylevel else 0)  for i in range(1, 5) }
+    res["levels"] = { i: (mylevel[i] if i in mylevel else 0) for i in range(1, 5) }
 
     return genResponse(res)
 
